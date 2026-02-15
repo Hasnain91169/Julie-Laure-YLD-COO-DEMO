@@ -1,55 +1,43 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
+const PW_KEY = "ff_app_password";
 let appPassword: string | null = null;
 
 export function setAppPassword(pw: string) {
   appPassword = pw;
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(PW_KEY, pw);
+  }
 }
 
 export function apiBase(): string {
   return API_BASE;
 }
 
+export function clearPassword(): void {
+  appPassword = null;
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(PW_KEY);
+  }
+}
+
 export function readPassword(): string {
-  if (appPassword) {
-    return appPassword;
-  }
-  if (typeof window === "undefined") {
-    return "";
-  }
-  const stored = window.localStorage.getItem("ff_app_password") || "";
-  if (stored) {
-    appPassword = stored;
-  }
+  if (appPassword) return appPassword;
+  if (typeof window === "undefined") return "";
+  const stored = window.localStorage.getItem(PW_KEY) || "";
+  if (stored) appPassword = stored;
   return stored;
 }
 
-export function storePassword(password: string): void {
-  appPassword = password;
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.setItem("ff_app_password", password);
-}
-
-export function clearPassword(): void {
-  appPassword = null;
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.removeItem("ff_app_password");
-}
-
-export async function apiFetch<T>(path: string, options: RequestInit = {}, password?: string): Promise<T> {
-  const activePassword = password ?? readPassword();
-  const headers = new Headers(options.headers || {});
+export async function apiFetch<T>(path: string, init: RequestInit = {}, passwordOverride?: string): Promise<T> {
+  const headers = new Headers(init.headers || {});
+  const pw = passwordOverride ?? readPassword();
   headers.set("Content-Type", "application/json");
-  if (activePassword) {
-    headers.set("x-app-password", activePassword);
+  if (pw) {
+    headers.set("x-app-password", pw);
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
+    ...init,
     headers,
     cache: "no-store",
   });

@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { apiFetch, setAppPassword, storePassword } from "@/lib/api";
+import { apiFetch, setAppPassword } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,8 +18,7 @@ export default function LoginPage() {
 
     try {
       setAppPassword(password);
-      await apiFetch("/dashboard", {}, password);
-      storePassword(password);
+      await apiFetch("/dashboard", { method: "GET" });
       router.replace("/dashboard");
     } catch {
       setError("Invalid password");

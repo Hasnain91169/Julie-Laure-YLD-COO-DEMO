@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { apiFetch, storePassword } from "@/lib/api";
+import { apiFetch, setAppPassword, storePassword } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,6 +17,7 @@ export default function LoginPage() {
     setError("");
 
     try {
+      setAppPassword(password);
       await apiFetch("/dashboard", {}, password);
       storePassword(password);
       router.replace("/dashboard");

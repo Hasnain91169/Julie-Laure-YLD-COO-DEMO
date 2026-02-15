@@ -1,17 +1,31 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+let appPassword: string | null = null;
+
+export function setAppPassword(pw: string) {
+  appPassword = pw;
+}
+
 export function apiBase(): string {
   return API_BASE;
 }
 
 export function readPassword(): string {
+  if (appPassword) {
+    return appPassword;
+  }
   if (typeof window === "undefined") {
     return "";
   }
-  return window.localStorage.getItem("ff_app_password") || "";
+  const stored = window.localStorage.getItem("ff_app_password") || "";
+  if (stored) {
+    appPassword = stored;
+  }
+  return stored;
 }
 
 export function storePassword(password: string): void {
+  appPassword = password;
   if (typeof window === "undefined") {
     return;
   }
@@ -19,6 +33,7 @@ export function storePassword(password: string): void {
 }
 
 export function clearPassword(): void {
+  appPassword = null;
   if (typeof window === "undefined") {
     return;
   }

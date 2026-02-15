@@ -1,0 +1,19 @@
+{
+  "respondent": {
+    "name": "Jordan Lee",
+    "email": "jordan.lee@example.com",
+    "team": "Engineering",
+    "role": "Engineering Manager",
+    "location": "New York",
+    "consent": true
+  },
+  "transcript": "Every week we compile status updates from Jira and Salesforce 8 times. It takes roughly 50 minutes each run and involves 4 people. We keep doing manual copy and paste into slides and Excel.",
+  "call_summary": "Engineering leadership spends significant time on manual reporting handoffs.",
+  "started_at": "2026-02-13T15:00:00Z",
+  "ended_at": "2026-02-13T15:24:00Z",
+  "metadata_json": {
+    "provider": "internal",
+    "session_id": "int_144",
+    "source": "pilot_interview"
+  }
+}

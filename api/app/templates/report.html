@@ -1,0 +1,276 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Friction Finder Report</title>
+  <style>
+    :root {
+      --ink: #102132;
+      --subtle: #5d6c7a;
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --accent: #0f766e;
+      --accent-soft: #e0f2f1;
+      --line: #dde3e8;
+      --danger: #b91c1c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: radial-gradient(circle at top left, #e9f5f3 0%, var(--bg) 40%);
+      padding: 28px;
+    }
+    .page {
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+    .hero {
+      background: linear-gradient(120deg, #103250 0%, #155e75 100%);
+      color: white;
+      border-radius: 14px;
+      padding: 26px;
+      margin-bottom: 18px;
+    }
+    .hero h1 {
+      margin: 0 0 10px 0;
+      font-size: 30px;
+      letter-spacing: -0.02em;
+    }
+    .hero p {
+      margin: 4px 0;
+      color: #e2eef6;
+    }
+    .grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-bottom: 16px;
+    }
+    .kpi {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px;
+    }
+    .kpi .label { color: var(--subtle); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+    .kpi .value { font-size: 24px; font-weight: 700; margin-top: 6px; }
+
+    .section {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+    h2 {
+      margin: 0 0 12px 0;
+      font-size: 20px;
+      letter-spacing: -0.01em;
+    }
+    .quick-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .quick-item {
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--accent);
+      border-radius: 8px;
+      padding: 10px;
+      background: var(--accent-soft);
+    }
+    .quick-item h3 {
+      margin: 0 0 6px;
+      font-size: 14px;
+    }
+    .quick-item p {
+      margin: 0;
+      font-size: 12px;
+      color: #20585a;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      padding: 8px 6px;
+      vertical-align: top;
+    }
+    th {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--subtle);
+    }
+    .bars {
+      display: grid;
+      gap: 8px;
+    }
+    .bar-item {
+      display: grid;
+      grid-template-columns: 170px 1fr 60px;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+    }
+    .bar-track {
+      height: 9px;
+      background: #e8edf1;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #0891b2, #14b8a6);
+      border-radius: 999px;
+    }
+    .quote {
+      border-left: 3px solid var(--line);
+      padding-left: 10px;
+      margin: 8px 0;
+      color: #31404f;
+      font-size: 12px;
+    }
+    .note { color: var(--subtle); font-size: 12px; }
+    .tag {
+      display: inline-block;
+      background: #e8f0fb;
+      color: #234;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 10px;
+      margin-right: 4px;
+    }
+    .sensitive {
+      color: var(--danger);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <h1>Friction Finder COO Report</h1>
+      <p>Generated: {{ generated }}</p>
+      <p>Estimated hours saved/week from top quick wins: <strong>{{ estimated_hours_saved }}</strong></p>
+    </section>
+
+    <section class="grid">
+      <div class="kpi"><div class="label">Pain Points</div><div class="value">{{ kpis.total_pain_points }}</div></div>
+      <div class="kpi"><div class="label">Hours Lost / Week</div><div class="value">{{ kpis.total_hours_per_week }}</div></div>
+      <div class="kpi"><div class="label">Top Backlog</div><div class="value">{{ top_backlog|length }}</div></div>
+      <div class="kpi"><div class="label">Quick Wins</div><div class="value">{{ kpis.quick_wins|length }}</div></div>
+    </section>
+
+    <section class="section">
+      <h2>Executive Summary: Top 3 Quick Wins</h2>
+      <div class="quick-grid">
+        {% for item in executive_quick_wins %}
+        <article class="quick-item">
+          <h3>{{ item.title }}</h3>
+          <p>Team: {{ item.team }}</p>
+          <p>Impact: {{ item.impact_hours_per_week }} h/week</p>
+          <p>Priority: {{ item.priority_score }}</p>
+        </article>
+        {% else %}
+        <p class="note">No quick wins currently meet threshold.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Top 10 Ranked Automation Backlog</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Pain Point</th>
+            <th>Team</th>
+            <th>Category</th>
+            <th>Impact</th>
+            <th>Effort</th>
+            <th>Confidence</th>
+            <th>Priority</th>
+            <th>Approach</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in top_backlog %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td>
+              <div><strong>{{ item.title }}</strong></div>
+              <div class="note">{{ item.suggested_solution }}</div>
+            </td>
+            <td>{{ item.team }}</td>
+            <td>{{ item.category }}</td>
+            <td>{{ item.impact_hours_per_week }}</td>
+            <td>{{ item.effort_score }}</td>
+            <td>{{ item.confidence_score }}</td>
+            <td>{{ item.priority_score }}</td>
+            <td>
+              <span class="tag">{{ item.automation_type }}</span>
+              <div class="note">Owner: {{ item.owner_suggestion }}</div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <h2>Breakdown by Team</h2>
+      <div class="bars">
+        {% for row in team_breakdown %}
+        <div class="bar-item">
+          <strong>{{ row.team }}</strong>
+          <div class="bar-track"><div class="bar-fill" style="width: {{ (row.total * 6) if row.total * 6 < 100 else 100 }}%;"></div></div>
+          <span>{{ row.total }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Breakdown by Category</h2>
+      <div class="bars">
+        {% for row in category_breakdown %}
+        <div class="bar-item">
+          <strong>{{ row.category }}</strong>
+          <div class="bar-track"><div class="bar-fill" style="width: {{ (row.count * 6) if row.count * 6 < 100 else 100 }}%;"></div></div>
+          <span>{{ row.count }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Systems Involved Map</h2>
+      {% for system in systems_map %}
+        <span class="tag">{{ system.system }} ({{ system.mentions }})</span>
+      {% else %}
+        <p class="note">No systems identified yet.</p>
+      {% endfor %}
+    </section>
+
+    <section class="section">
+      <h2>Appendix: Anonymised Quotes (Non-Sensitive Only)</h2>
+      {% for quote in quotes %}
+      <div class="quote">
+        <div>{{ quote.quote }}</div>
+        <div class="note">Pain Point #{{ quote.pain_point_id }} - {{ quote.team }}</div>
+      </div>
+      {% else %}
+      <p class="note">No non-sensitive quotes available.</p>
+      {% endfor %}
+      <p class="note sensitive">Sensitive entries are excluded automatically.</p>
+    </section>
+  </main>
+</body>
+</html>

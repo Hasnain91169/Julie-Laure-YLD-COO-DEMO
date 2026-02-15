@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #eff4f6;
+  --surface: #ffffff;
+  --ink: #122230;
+  --muted: #60717f;
+  --line: #d7e0e7;
+  --accent: #0f766e;
+  --accent-soft: #d5f3ee;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 0% 0%, #d6f1ec 0%, rgba(214, 241, 236, 0) 34%),
+    radial-gradient(circle at 100% 100%, #fde4d4 0%, rgba(253, 228, 212, 0) 28%),
+    var(--bg);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+input,
+textarea,
+select,
+button {
+  font: inherit;
+}
+
+.card {
+  @apply rounded-xl border border-slate-200 bg-white shadow-card;
+}
+
+.input {
+  @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100;
+}
+
+.btn {
+  @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition;
+}
+
+.btn-primary {
+  @apply btn bg-teal-700 text-white hover:bg-teal-800;
+}
+
+.btn-secondary {
+  @apply btn border border-slate-300 bg-white text-slate-800 hover:bg-slate-50;
+}

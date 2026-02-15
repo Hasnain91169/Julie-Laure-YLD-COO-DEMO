@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: ./api
+    container_name: friction-finder-api
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./friction_finder.db}
+      APP_PASSWORD: ${APP_PASSWORD:-changeme}
+      AI_PROVIDER: ${AI_PROVIDER:-none}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      MODEL_NAME: ${MODEL_NAME:-gpt-4o-mini}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1}
+      REPORT_QUICKWIN_IMPACT_THRESHOLD_HOURS: ${REPORT_QUICKWIN_IMPACT_THRESHOLD_HOURS:-5}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./api:/app
+
+  web:
+    build:
+      context: ./web
+    container_name: friction-finder-web
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  db:
+    image: postgres:16-alpine
+    container_name: friction-finder-db
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_DB: friction_finder
+      POSTGRES_USER: friction
+      POSTGRES_PASSWORD: friction
+    ports:
+      - "5432:5432"
+    volumes:
+      - friction_finder_pg:/var/lib/postgresql/data
+
+volumes:
+  friction_finder_pg:

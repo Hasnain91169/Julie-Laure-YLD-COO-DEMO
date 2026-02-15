@@ -1,0 +1,34 @@
+{
+  "respondent": {
+    "name": "Alex Morgan",
+    "email": "alex.morgan@example.com",
+    "team": "Finance",
+    "role": "Finance Ops Analyst",
+    "location": "London",
+    "consent": true
+  },
+  "transcript": "We manually reconcile invoice approvals in NetSuite and email threads about 18 times a week. Each request takes around 30 minutes and usually involves 2 people. We track the status in Excel.",
+  "call_summary": "Finance team reports heavy manual approval chasing and reconciliation.",
+  "extracted_fields": [
+    {
+      "title": "Invoice approval chasing across email",
+      "description": "Manual invoice approvals and reconciliation across email and NetSuite.",
+      "category": "approvals",
+      "frequency_per_week": 18,
+      "minutes_per_occurrence": 30,
+      "people_affected": 2,
+      "systems_involved": ["NetSuite", "Outlook", "Excel"],
+      "current_workaround": "Email reminders and spreadsheet tracker",
+      "failure_modes": "Approvals stall and entries are duplicated",
+      "success_definition": "Single approval workflow with SLA visibility",
+      "sensitive_flag": false
+    }
+  ],
+  "started_at": "2026-02-14T09:00:00Z",
+  "ended_at": "2026-02-14T09:29:00Z",
+  "metadata_json": {
+    "provider": "vapi",
+    "call_id": "call_001",
+    "language": "en"
+  }
+}

@@ -4,23 +4,17 @@ import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { downloadPdf, fetchHtml } from "@/lib/api";
-import { useRequireAuth } from "@/lib/useRequireAuth";
 
 export default function ReportPage() {
-  const { ready } = useRequireAuth();
   const [html, setHtml] = useState("");
   const [error, setError] = useState("");
   const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
-    if (!ready) {
-      return;
-    }
-
     fetchHtml("/report")
       .then(setHtml)
       .catch((err) => setError(err.message));
-  }, [ready]);
+  }, []);
 
   async function handleDownload() {
     setDownloading(true);
@@ -38,10 +32,6 @@ export default function ReportPage() {
     } finally {
       setDownloading(false);
     }
-  }
-
-  if (!ready) {
-    return <div className="p-8 text-sm text-slate-700">Authorising...</div>;
   }
 
   return (

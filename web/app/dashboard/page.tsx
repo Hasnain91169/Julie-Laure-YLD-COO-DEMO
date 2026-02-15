@@ -5,28 +5,18 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
 import type { DashboardMetrics } from "@/lib/types";
-import { useRequireAuth } from "@/lib/useRequireAuth";
 
 export default function DashboardPage() {
-  const { ready } = useRequireAuth();
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!ready) {
-      return;
-    }
-
     apiFetch<DashboardMetrics>("/dashboard")
       .then(setMetrics)
       .catch((err) => setError(err.message));
-  }, [ready]);
+  }, []);
 
   const topTeams = useMemo(() => metrics?.team_heatmap.slice(0, 4) || [], [metrics]);
-
-  if (!ready) {
-    return <div className="p-8 text-sm text-slate-700">Authorising...</div>;
-  }
 
   return (
     <AppShell>

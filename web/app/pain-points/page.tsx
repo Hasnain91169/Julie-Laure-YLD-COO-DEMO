@@ -6,7 +6,6 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
 import type { PainPointListItem } from "@/lib/types";
-import { useRequireAuth } from "@/lib/useRequireAuth";
 
 const categories = [
   "all",
@@ -22,7 +21,6 @@ const categories = [
 ];
 
 export default function PainPointsPage() {
-  const { ready } = useRequireAuth();
   const [items, setItems] = useState<PainPointListItem[]>([]);
   const [team, setTeam] = useState("all");
   const [category, setCategory] = useState("all");
@@ -34,10 +32,6 @@ export default function PainPointsPage() {
   }, [items]);
 
   useEffect(() => {
-    if (!ready) {
-      return;
-    }
-
     const params = new URLSearchParams();
     if (team !== "all") {
       params.set("team", team);
@@ -52,11 +46,7 @@ export default function PainPointsPage() {
     apiFetch<PainPointListItem[]>(`/pain-points?${params.toString()}`)
       .then(setItems)
       .catch((err) => setError(err.message));
-  }, [ready, team, category, priorityMin]);
-
-  if (!ready) {
-    return <div className="p-8 text-sm text-slate-700">Authorising...</div>;
-  }
+  }, [team, category, priorityMin]);
 
   return (
     <AppShell>

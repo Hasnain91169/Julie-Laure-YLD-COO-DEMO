@@ -4,10 +4,8 @@ import { useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
-import { useRequireAuth } from "@/lib/useRequireAuth";
 
 export default function DemoPage() {
-  const { ready } = useRequireAuth();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState("");
   const [error, setError] = useState("");
@@ -30,10 +28,6 @@ export default function DemoPage() {
     } finally {
       setLoading(false);
     }
-  }
-
-  if (!ready) {
-    return <div className="p-8 text-sm text-slate-700">Authorising...</div>;
   }
 
   return (

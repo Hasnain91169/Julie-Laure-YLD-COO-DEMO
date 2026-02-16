@@ -1,5 +1,6 @@
 import json
 import logging
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal
 
@@ -74,14 +75,155 @@ def get_report_pdf(
         logger.info("PDF engine status: weasyprint available")
         pdf = HTML(string=html, base_url=str(TEMPLATE_DIR)).write_pdf()
     except Exception as exc:
-        logger.exception("PDF engine status: weasyprint unavailable or failed")
-        raise HTTPException(
-            status_code=500,
-            detail="PDF export is currently unavailable. HTML report remains available at /report.html.",
-        ) from exc
+        logger.exception("PDF engine status: weasyprint unavailable or failed; attempting reportlab fallback")
+        try:
+            pdf = _build_reportlab_pdf(context)
+        except Exception as fallback_exc:
+            logger.exception("PDF engine status: reportlab fallback failed")
+            raise HTTPException(
+                status_code=500,
+                detail="PDF export is currently unavailable. HTML report remains available at /report.html.",
+            ) from fallback_exc
 
     headers = {"Content-Disposition": "attachment; filename=friction-finder-report.pdf"}
     return Response(content=pdf, media_type="application/pdf", headers=headers)
+
+
+def _build_reportlab_pdf(context: dict[str, Any]) -> bytes:
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import inch
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="No fallback PDF engine available") from exc
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        leftMargin=0.6 * inch,
+        rightMargin=0.6 * inch,
+        topMargin=0.6 * inch,
+        bottomMargin=0.6 * inch,
+        title="COO Friction Intelligence Report",
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "title_style",
+        parent=styles["Heading1"],
+        fontName="Helvetica-Bold",
+        fontSize=18,
+        leading=22,
+        textColor=colors.HexColor("#0f172a"),
+        spaceAfter=8,
+    )
+    heading_style = ParagraphStyle(
+        "heading_style",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=12,
+        leading=15,
+        textColor=colors.HexColor("#0f172a"),
+        spaceAfter=6,
+        spaceBefore=10,
+    )
+    body_style = ParagraphStyle(
+        "body_style",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#1e293b"),
+    )
+    muted_style = ParagraphStyle(
+        "muted_style",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.HexColor("#475569"),
+    )
+
+    story: list[Any] = []
+    story.append(Paragraph("COO Friction Intelligence Report", title_style))
+    story.append(Paragraph(f"Generated: {context.get('generated', '-')}", muted_style))
+    story.append(Spacer(1, 10))
+
+    kpi_rows = [
+        ["Pain Points", context.get("kpi_total_pain_points", "0"), "Hours Lost / Week", context.get("kpi_total_hours_week", "0 h")],
+        ["Annual Cost", context.get("kpi_annual_cost", "-"), "Top Impact Area", context.get("kpi_top_impact_area", "None")],
+    ]
+    kpi_table = Table(kpi_rows, colWidths=[1.4 * inch, 1.6 * inch, 1.4 * inch, 2.2 * inch])
+    kpi_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+                ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#0f172a")),
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#dbe3ea")),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    story.append(kpi_table)
+
+    story.append(Paragraph("Top Automation Opportunities", heading_style))
+    backlog = list(context.get("ranked_backlog", []))
+    if backlog:
+        rows: list[list[str]] = [["Rank", "Pain Point", "Team", "Impact", "Priority", "Approach"]]
+        for item in backlog[:10]:
+            rows.append(
+                [
+                    str(item.get("rank", "")),
+                    str(item.get("title", "-"))[:50],
+                    str(item.get("team", "-")),
+                    str(item.get("impact_hours_fmt", "-")),
+                    str(item.get("priority_score_fmt", "-")),
+                    str(item.get("automation_type", "-")),
+                ]
+            )
+        table = Table(rows, colWidths=[0.45 * inch, 2.45 * inch, 1.0 * inch, 0.8 * inch, 0.75 * inch, 1.2 * inch], repeatRows=1)
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f172a")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#dbe3ea")),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+                    ("FONTSIZE", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ]
+            )
+        )
+        story.append(table)
+    else:
+        story.append(Paragraph("No ranked opportunities available.", body_style))
+
+    systems = list(context.get("systems_map", []))
+    story.append(Paragraph("Systems Involved", heading_style))
+    if systems:
+        story.append(Paragraph(", ".join([f"{s.get('system', '-')}: {s.get('mentions', 0)}" for s in systems[:12]]), body_style))
+    else:
+        story.append(Paragraph("No systems identified.", body_style))
+
+    quotes = list(context.get("quotes", []))
+    if quotes:
+        story.append(Paragraph("Appendix: Anonymised Quotes", heading_style))
+        for quote in quotes[:10]:
+            story.append(Paragraph(f"\"{quote.get('quote', '')}\"", body_style))
+            story.append(Paragraph(f"Pain Point #{quote.get('pain_point_id', '-')}, Team {quote.get('team', '-')}", muted_style))
+            story.append(Spacer(1, 4))
+
+    doc.build(story)
+    pdf = buffer.getvalue()
+    buffer.close()
+    return pdf
 
 
 def _safe_float(value: Any) -> float:

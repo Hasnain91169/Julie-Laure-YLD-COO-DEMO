@@ -18,28 +18,136 @@ from app.services.analytics import report_context
 
 router = APIRouter(tags=["report"], dependencies=[Depends(require_app_password)])
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
+TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
+REPORT_CSS_PATH = TEMPLATE_DIR / "report.css"
+ASSUMED_HOURLY_RATE_USD = 85.0
 
 
 @router.get("/report", response_class=HTMLResponse)
 def get_report(request: Request, session: Session = Depends(get_session)) -> HTMLResponse:
-    context = report_context(session)
+    context = _build_report_view_model(report_context(session))
     return templates.TemplateResponse(name="report.html", context={"request": request, **context})
 
 
 @router.get("/report.pdf")
 def get_report_pdf(request: Request, session: Session = Depends(get_session)) -> Response:
-    context = report_context(session)
+    context = _build_report_view_model(report_context(session))
     html = templates.get_template("report.html").render(**context)
 
     try:
         from weasyprint import HTML
 
-        pdf = HTML(string=html, base_url=str(request.base_url)).write_pdf()
+        pdf = HTML(string=html, base_url=str(TEMPLATE_DIR)).write_pdf()
     except Exception:
         pdf = _build_reportlab_pdf(context)
 
     headers = {"Content-Disposition": "attachment; filename=friction-finder-report.pdf"}
     return Response(content=pdf, media_type="application/pdf", headers=headers)
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _fmt_number(value: float, digits: int = 2) -> str:
+    return f"{value:,.{digits}f}"
+
+
+def _fmt_hours(value: Any) -> str:
+    return f"{_fmt_number(_safe_float(value), 1)} h"
+
+
+def _fmt_priority(value: Any) -> str:
+    return _fmt_number(_safe_float(value), 2)
+
+
+def _fmt_currency(value: Any) -> str:
+    return f"${_fmt_number(_safe_float(value), 0)}"
+
+
+def _priority_band(priority: float) -> str:
+    if priority >= 12:
+        return "high"
+    if priority >= 6:
+        return "medium"
+    return "low"
+
+
+def _build_report_view_model(context: dict[str, Any]) -> dict[str, Any]:
+    kpis = context.get("kpis", {})
+    top_backlog = list(context.get("top_backlog", []))
+    team_breakdown = list(context.get("team_breakdown", []))
+
+    total_hours_week = _safe_float(kpis.get("total_hours_per_week", 0.0))
+    annual_cost = total_hours_week * ASSUMED_HOURLY_RATE_USD * 52
+    annual_savings = _safe_float(context.get("estimated_hours_saved", 0.0)) * ASSUMED_HOURLY_RATE_USD * 52
+
+    top_impact_area = "None"
+    top_categories = kpis.get("top_categories", [])
+    if top_categories:
+        top_impact_area = str(top_categories[0].get("category", "None")).replace("_", " ").title()
+
+    ranked_backlog: list[dict[str, Any]] = []
+    for idx, item in enumerate(top_backlog, 1):
+        priority = _safe_float(item.get("priority_score", 0.0))
+        impact = _safe_float(item.get("impact_hours_per_week", 0.0))
+        ranked_backlog.append(
+            {
+                **item,
+                "rank": idx,
+                "priority_class": _priority_band(priority),
+                "priority_score_fmt": _fmt_priority(priority),
+                "impact_hours_fmt": _fmt_hours(impact),
+                "effort_score_fmt": str(_safe_int(item.get("effort_score", 0))),
+            }
+        )
+
+    quick_wins = [item for item in ranked_backlog if _safe_int(item.get("effort_score")) <= 2]
+    medium_impact = [item for item in ranked_backlog if 3 <= _safe_int(item.get("effort_score")) <= 3]
+    strategic = [item for item in ranked_backlog if _safe_int(item.get("effort_score")) >= 4]
+
+    max_team_total = max((_safe_int(row.get("total", 0)) for row in team_breakdown), default=1)
+    team_rows: list[dict[str, Any]] = []
+    for row in team_breakdown:
+        total = _safe_int(row.get("total", 0))
+        width = (total / max_team_total * 100) if max_team_total else 0
+        team_rows.append(
+            {
+                **row,
+                "total_fmt": str(total),
+                "bar_width_pct": _fmt_number(width, 0),
+            }
+        )
+
+    css_text = ""
+    if REPORT_CSS_PATH.exists():
+        css_text = REPORT_CSS_PATH.read_text(encoding="utf-8")
+
+    return {
+        **context,
+        "report_css": css_text,
+        "assumed_hourly_rate_usd": ASSUMED_HOURLY_RATE_USD,
+        "kpi_total_pain_points": str(_safe_int(kpis.get("total_pain_points", 0))),
+        "kpi_total_hours_week": _fmt_hours(total_hours_week),
+        "kpi_annual_cost": _fmt_currency(annual_cost),
+        "kpi_annual_savings": _fmt_currency(annual_savings),
+        "kpi_top_impact_area": top_impact_area,
+        "ranked_backlog": ranked_backlog[:10],
+        "team_rows": team_rows[:12],
+        "roadmap_quick_wins": quick_wins[:5],
+        "roadmap_medium_impact": medium_impact[:5],
+        "roadmap_strategic": strategic[:5],
+    }
 
 
 def _build_reportlab_pdf(context: dict[str, Any]) -> bytes:

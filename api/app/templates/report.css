@@ -146,6 +146,33 @@ h3 {
   font-size: 12px;
 }
 
+.roi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.roi-card {
+  background: #f8fffd;
+  border: 1px solid #ccfbf1;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.roi-label {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+}
+
+.roi-value {
+  margin-top: 8px;
+  font-size: 24px;
+  line-height: 1.15;
+  font-weight: 700;
+}
+
 .ranked-table {
   width: 100%;
   border-collapse: collapse;
@@ -246,6 +273,10 @@ h3 {
   border-radius: 999px;
 }
 
+.category-fill {
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+}
+
 .team-count {
   text-align: right;
   color: #334155;
@@ -310,6 +341,16 @@ h3 {
   font-weight: 600;
 }
 
+.split-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.systems-table {
+  margin-top: 10px;
+}
+
 .quotes-grid {
   display: grid;
   gap: 8px;
@@ -359,4 +400,8 @@ h3 {
 
 .page-number::before {
   content: counter(page);
+}
+
+.page-break {
+  page-break-before: always;
 }

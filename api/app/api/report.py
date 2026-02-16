@@ -1,9 +1,9 @@
 import json
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -20,18 +20,40 @@ router = APIRouter(tags=["report"], dependencies=[Depends(require_app_password)]
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
 TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
 REPORT_CSS_PATH = TEMPLATE_DIR / "report.css"
-ASSUMED_HOURLY_RATE_USD = 85.0
+CURRENCY_SYMBOLS: dict[str, str] = {"GBP": "£", "USD": "$", "EUR": "€"}
+DEFAULT_CURRENCY = "GBP"
+DEFAULT_HOURLY_RATE = 60.0
 
 
 @router.get("/report", response_class=HTMLResponse)
-def get_report(request: Request, session: Session = Depends(get_session)) -> HTMLResponse:
-    context = _build_report_view_model(report_context(session))
+def get_report(
+    request: Request,
+    hourly_rate: float = Query(default=DEFAULT_HOURLY_RATE, ge=10, le=500),
+    currency: Literal["GBP", "USD", "EUR"] = DEFAULT_CURRENCY,
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    context = _build_report_view_model(
+        report_context(session),
+        hourly_rate=hourly_rate,
+        currency=currency,
+        quick_win_threshold=get_settings().report_quickwin_impact_threshold_hours,
+    )
     return templates.TemplateResponse(name="report.html", context={"request": request, **context})
 
 
 @router.get("/report.pdf")
-def get_report_pdf(request: Request, session: Session = Depends(get_session)) -> Response:
-    context = _build_report_view_model(report_context(session))
+def get_report_pdf(
+    request: Request,
+    hourly_rate: float = Query(default=DEFAULT_HOURLY_RATE, ge=10, le=500),
+    currency: Literal["GBP", "USD", "EUR"] = DEFAULT_CURRENCY,
+    session: Session = Depends(get_session),
+) -> Response:
+    context = _build_report_view_model(
+        report_context(session),
+        hourly_rate=hourly_rate,
+        currency=currency,
+        quick_win_threshold=get_settings().report_quickwin_impact_threshold_hours,
+    )
     html = templates.get_template("report.html").render(**context)
 
     try:
@@ -71,8 +93,9 @@ def _fmt_priority(value: Any) -> str:
     return _fmt_number(_safe_float(value), 2)
 
 
-def _fmt_currency(value: Any) -> str:
-    return f"${_fmt_number(_safe_float(value), 0)}"
+def _fmt_currency(value: Any, currency: str) -> str:
+    symbol = CURRENCY_SYMBOLS.get(currency, currency)
+    return f"{symbol}{_fmt_number(_safe_float(value), 0)}"
 
 
 def _priority_band(priority: float) -> str:
@@ -83,14 +106,26 @@ def _priority_band(priority: float) -> str:
     return "low"
 
 
-def _build_report_view_model(context: dict[str, Any]) -> dict[str, Any]:
+def _build_report_view_model(
+    context: dict[str, Any],
+    hourly_rate: float,
+    currency: Literal["GBP", "USD", "EUR"],
+    quick_win_threshold: float,
+) -> dict[str, Any]:
     kpis = context.get("kpis", {})
     top_backlog = list(context.get("top_backlog", []))
     team_breakdown = list(context.get("team_breakdown", []))
+    category_breakdown = list(context.get("category_breakdown", []))
 
     total_hours_week = _safe_float(kpis.get("total_hours_per_week", 0.0))
-    annual_cost = total_hours_week * ASSUMED_HOURLY_RATE_USD * 52
-    annual_savings = _safe_float(context.get("estimated_hours_saved", 0.0)) * ASSUMED_HOURLY_RATE_USD * 52
+    annual_hours = total_hours_week * 52
+    weekly_cost = total_hours_week * hourly_rate
+    annual_cost = annual_hours * hourly_rate
+    annual_savings = _safe_float(context.get("estimated_hours_saved", 0.0)) * hourly_rate * 52
+    weekly_cost_low = weekly_cost * 0.8
+    weekly_cost_high = weekly_cost * 1.2
+    annual_cost_low = annual_cost * 0.8
+    annual_cost_high = annual_cost * 1.2
 
     top_impact_area = "None"
     top_categories = kpis.get("top_categories", [])
@@ -129,6 +164,19 @@ def _build_report_view_model(context: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
+    max_category_total = max((_safe_int(row.get("count", 0)) for row in category_breakdown), default=1)
+    category_rows: list[dict[str, Any]] = []
+    for row in category_breakdown:
+        count = _safe_int(row.get("count", 0))
+        width = (count / max_category_total * 100) if max_category_total else 0
+        category_rows.append(
+            {
+                **row,
+                "count_fmt": str(count),
+                "bar_width_pct": _fmt_number(width, 0),
+            }
+        )
+
     css_text = ""
     if REPORT_CSS_PATH.exists():
         css_text = REPORT_CSS_PATH.read_text(encoding="utf-8")
@@ -136,14 +184,23 @@ def _build_report_view_model(context: dict[str, Any]) -> dict[str, Any]:
     return {
         **context,
         "report_css": css_text,
-        "assumed_hourly_rate_usd": ASSUMED_HOURLY_RATE_USD,
+        "hourly_rate": _fmt_number(hourly_rate, 0),
+        "currency_code": currency,
+        "currency_symbol": CURRENCY_SYMBOLS.get(currency, currency),
+        "quick_win_threshold": _fmt_number(quick_win_threshold, 1),
         "kpi_total_pain_points": str(_safe_int(kpis.get("total_pain_points", 0))),
         "kpi_total_hours_week": _fmt_hours(total_hours_week),
-        "kpi_annual_cost": _fmt_currency(annual_cost),
-        "kpi_annual_savings": _fmt_currency(annual_savings),
+        "kpi_annual_cost": _fmt_currency(annual_cost, currency),
+        "kpi_annual_savings": _fmt_currency(annual_savings, currency),
         "kpi_top_impact_area": top_impact_area,
+        "roi_weekly_cost": _fmt_currency(weekly_cost, currency),
+        "roi_annual_hours": _fmt_number(annual_hours, 1),
+        "roi_annual_cost": _fmt_currency(annual_cost, currency),
+        "roi_weekly_range": f"{_fmt_currency(weekly_cost_low, currency)} to {_fmt_currency(weekly_cost_high, currency)}",
+        "roi_annual_range": f"{_fmt_currency(annual_cost_low, currency)} to {_fmt_currency(annual_cost_high, currency)}",
         "ranked_backlog": ranked_backlog[:10],
         "team_rows": team_rows[:12],
+        "category_rows": category_rows[:12],
         "roadmap_quick_wins": quick_wins[:5],
         "roadmap_medium_impact": medium_impact[:5],
         "roadmap_strategic": strategic[:5],

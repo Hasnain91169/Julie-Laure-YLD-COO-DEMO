@@ -13,7 +13,7 @@
     <p class="subtitle">Operational bottleneck analysis and automation opportunities</p>
     <div class="meta-row">
       <span>Generated: {{ generated }}</span>
-      <span>Assumed hourly rate: ${{ assumed_hourly_rate_usd }}/hour</span>
+      <span>Hourly rate: {{ currency_symbol }}{{ hourly_rate }}/hour ({{ currency_code }})</span>
     </div>
     <div class="divider"></div>
   </header>
@@ -39,6 +39,31 @@
       </article>
     </div>
     <p class="kpi-note">Estimated annual savings from top validated quick wins: <strong>{{ kpi_annual_savings }}</strong></p>
+  </section>
+
+  <section class="section">
+    <h2>ROI Snapshot</h2>
+    <div class="roi-grid">
+      <article class="roi-card">
+        <div class="roi-label">Weekly Cost Estimate</div>
+        <div class="roi-value">{{ roi_weekly_cost }}</div>
+      </article>
+      <article class="roi-card">
+        <div class="roi-label">Annual Hours Affected</div>
+        <div class="roi-value">{{ roi_annual_hours }} h</div>
+      </article>
+      <article class="roi-card">
+        <div class="roi-label">Annual Cost Estimate</div>
+        <div class="roi-value">{{ roi_annual_cost }}</div>
+      </article>
+    </div>
+    <p class="kpi-note">
+      Formula used: hours/week × hourly rate × 52.
+      Figures are directional and conservative for planning, not a finance forecast.
+    </p>
+    <p class="kpi-note">
+      Sensitivity range: weekly {{ roi_weekly_range }} | annual {{ roi_annual_range }}.
+    </p>
   </section>
 
   <section class="section">
@@ -82,23 +107,6 @@
   </section>
 
   <section class="section">
-    <h2>Team Impact Breakdown</h2>
-    <div class="team-bars">
-      {% for row in team_rows %}
-      <div class="team-row">
-        <div class="team-name">{{ row.team }}</div>
-        <div class="bar-track">
-          <div class="bar-fill" style="width: {{ row.bar_width_pct }}%;"></div>
-        </div>
-        <div class="team-count">{{ row.total_fmt }}</div>
-      </div>
-      {% else %}
-      <p class="empty-text">No team impact data available.</p>
-      {% endfor %}
-    </div>
-  </section>
-
-  <section class="section">
     <h2>Recommended Automation Roadmap</h2>
     <div class="roadmap-grid">
       <article class="roadmap-card">
@@ -111,7 +119,7 @@
             <span class="item-meta">{{ item.impact_hours_fmt }} | Priority {{ item.priority_score_fmt }}</span>
           </li>
           {% else %}
-          <li class="empty-li">No items currently match this lane.</li>
+          <li class="empty-li">No quick wins above threshold ({{ quick_win_threshold }} h/week).</li>
           {% endfor %}
         </ul>
       </article>
@@ -147,6 +155,44 @@
   </section>
 
   <section class="section">
+    <h2>Team and Category Breakdown</h2>
+    <div class="split-columns">
+      <div>
+        <h3>By Team</h3>
+        <div class="team-bars">
+          {% for row in team_rows %}
+          <div class="team-row">
+            <div class="team-name">{{ row.team }}</div>
+            <div class="bar-track">
+              <div class="bar-fill" style="width: {{ row.bar_width_pct }}%;"></div>
+            </div>
+            <div class="team-count">{{ row.total_fmt }}</div>
+          </div>
+          {% else %}
+          <p class="empty-text">No team impact data available.</p>
+          {% endfor %}
+        </div>
+      </div>
+      <div>
+        <h3>By Category</h3>
+        <div class="team-bars">
+          {% for row in category_rows %}
+          <div class="team-row">
+            <div class="team-name">{{ row.category|replace("_", " ")|title }}</div>
+            <div class="bar-track">
+              <div class="bar-fill category-fill" style="width: {{ row.bar_width_pct }}%;"></div>
+            </div>
+            <div class="team-count">{{ row.count_fmt }}</div>
+          </div>
+          {% else %}
+          <p class="empty-text">No category data available.</p>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
     <h2>Systems Involved</h2>
     <div class="chip-row">
       {% for system in systems_map %}
@@ -155,9 +201,27 @@
       <span class="empty-text">No systems identified.</span>
       {% endfor %}
     </div>
+    {% if systems_map %}
+    <table class="ranked-table systems-table">
+      <thead>
+        <tr>
+          <th>System</th>
+          <th>Mentions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for system in systems_map %}
+        <tr>
+          <td>{{ system.system }}</td>
+          <td>{{ system.mentions }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
   </section>
 
-  <section class="section">
+  <section class="section page-break">
     <h2>Appendix: Anonymised Quotes</h2>
     <div class="quotes-grid">
       {% for quote in quotes %}

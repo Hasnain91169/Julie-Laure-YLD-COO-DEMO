@@ -208,10 +208,28 @@ class COOChatService:
 
         concern_signal = any(
             token in transcript.lower()
-            for token in ["manual", "delay", "approval", "rework", "bottleneck", "error", "chasing", "handoff", "spreadsheet"]
+            for token in [
+                "manual",
+                "delay",
+                "approval",
+                "rework",
+                "bottleneck",
+                "error",
+                "chasing",
+                "handoff",
+                "spreadsheet",
+                "report",
+                "status",
+                "reconcile",
+                "mismatch",
+                "missing",
+                "formatting",
+                "slow",
+                "forever",
+            ]
         )
-        valid_concern = concern_signal and estimated_impact >= 1.0
-        needs_more_info = details_count < 3
+        valid_concern = concern_signal and (estimated_impact >= 1.0 or details_count >= 3)
+        needs_more_info = details_count < 2
 
         if not transcript:
             assistant_message = (
@@ -219,7 +237,7 @@ class COOChatService:
             )
         elif needs_more_info:
             assistant_message = (
-                "This is useful context. Could you share one more detail: how often this happens or how much time it usually costs?"
+                "Thanks, this helps. One quick detail would make this stronger: either frequency per week or time impact."
             )
         elif valid_concern:
             assistant_message = (

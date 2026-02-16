@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { apiPost } from "@/lib/api";
@@ -25,11 +25,19 @@ export default function COOChatPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<COOChatResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const conversationRef = useRef<HTMLDivElement | null>(null);
 
   const payloadMessages = useMemo(
     () => messages.filter((m) => m.role === "user" || (m.role === "assistant" && m !== starterMessage)),
     [messages],
   );
+
+  useEffect(() => {
+    if (!conversationRef.current) {
+      return;
+    }
+    conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
+  }, [messages, loading]);
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -101,7 +109,10 @@ export default function COOChatPage() {
           </div>
         </div>
 
-        <div className="mt-3 max-h-[420px] space-y-3 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div
+          ref={conversationRef}
+          className="mt-3 max-h-[420px] space-y-3 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3"
+        >
           {messages.map((msg, idx) => (
             <div
               key={`${msg.role}-${idx}`}

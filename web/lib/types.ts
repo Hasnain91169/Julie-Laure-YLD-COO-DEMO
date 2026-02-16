@@ -70,3 +70,63 @@ export type PainPointDetail = {
   owner_suggestion: string | null;
   created_at: string;
 };
+
+export type SessionRequest = {
+  name?: string;
+  email?: string;
+  team?: string;
+  role?: string;
+  location?: string;
+  consent?: boolean;
+};
+
+export type SessionResponse = {
+  session_id: string;
+  respondent_id: number;
+};
+
+export type ReportRunResponse = {
+  id: number;
+  created_at: string;
+  source: string;
+  interview_id: number | null;
+  session_id: string | null;
+  pdf_path_or_url: string | null;
+  summary: string | null;
+  recommendations_json: string | null;
+};
+
+export type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type COOChatContext = {
+  name?: string;
+  email?: string;
+  team: string;
+  role: string;
+  location?: string;
+  consent: boolean;
+};
+
+export type COOChatRequest = {
+  messages: ChatMessage[];
+  context: COOChatContext;
+  add_to_report: boolean;
+};
+
+export type COOChatResponse = {
+  assistant_message: string;
+  needs_more_info: boolean;
+  valid_concern: boolean;
+  root_cause: string | null;
+  rationale: string;
+  category: string;
+  estimated_impact_hours_per_week: number;
+  added_to_report: boolean;
+  interview_id: number | null;
+  respondent_id: number | null;
+  pain_point_ids: number[];
+  created_at: string;
+};

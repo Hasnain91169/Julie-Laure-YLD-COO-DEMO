@@ -23,27 +23,30 @@ export function AuthGate({ children }: PropsWithChildren) {
       };
     }
 
-    if (verifiedRef.current) {
-      if (!readPassword()) {
-        verifiedRef.current = false;
-      } else {
-        setReady(true);
-        return () => {
-          cancelled = true;
-        };
-      }
+    // If already verified and still has password, skip re-authentication
+    if (verifiedRef.current && readPassword()) {
+      setReady(true);
+      return () => {
+        cancelled = true;
+      };
     }
 
+    // If no password, clear verification and redirect
+    const password = readPassword();
+    if (!password) {
+      verifiedRef.current = false;
+      setReady(false);
+      clearPassword();
+      router.replace("/login");
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    // Need to authenticate - show loading state
     setReady(false);
 
     const authenticate = async () => {
-      const password = readPassword();
-      if (!password) {
-        clearPassword();
-        router.replace("/login");
-        return;
-      }
-
       try {
         await apiFetch("/dashboard", { method: "GET" });
         if (cancelled) {

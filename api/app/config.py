@@ -21,6 +21,11 @@ class Settings(BaseSettings):
 
     report_quickwin_impact_threshold_hours: float = 5.0
 
+    # Webhook security
+    vapi_webhook_secret: str | None = None
+    n8n_webhook_secret: str | None = None
+    n8n_webhook_url: str | None = None
+
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
     model_config = SettingsConfigDict(

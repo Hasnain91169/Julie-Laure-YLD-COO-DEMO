@@ -160,6 +160,141 @@ If using Postgres, set:
 DATABASE_URL=postgresql+psycopg://friction:friction@db:5432/friction_finder
 ```
 
+## Voice + n8n Demo
+
+### Overview
+
+The voice intake feature allows users to report friction points through voice conversation powered by VAPI, with automated report generation via n8n workflows.
+
+**Flow:** User speaks → VAPI bot → API ingestion → n8n workflow → AI-generated report
+
+### Setup
+
+#### 1) Configure VAPI (Optional - for actual voice calls)
+
+1. Create a VAPI account at [vapi.ai](https://vapi.ai)
+2. Create a new assistant configured to:
+   - Ask about friction points, team, frequency, impact
+   - Include `session_id` and `respondent_id` in metadata
+   - Send webhook to your API `/intake/vapi` endpoint
+3. Add credentials to `.env.local`:
+```env
+NEXT_PUBLIC_VAPI_PUBLIC_KEY=your_public_key
+NEXT_PUBLIC_VAPI_ASSISTANT_ID=your_assistant_id
+VAPI_WEBHOOK_SECRET=generate_a_secret
+```
+
+#### 2) Set up n8n Workflow
+
+1. Install n8n (cloud or self-hosted):
+```bash
+# Docker
+docker run -it --rm --name n8n -p 5678:5678 -v ~/.n8n:/home/node/.n8n n8nio/n8n
+
+# Or use n8n cloud at n8n.io
+```
+
+2. Import workflow:
+   - Go to Workflows → Import from File
+   - Select `examples/n8n_workflow.json`
+
+3. Configure environment variables in n8n:
+   - `API_BASE_URL`: Your API URL (e.g., `http://host.docker.internal:8000`)
+   - `APP_PASSWORD`: Your app password
+   - `N8N_WEBHOOK_SECRET`: Generate a secret
+   - Add OpenAI API credentials for AI analysis
+
+4. Activate the workflow and copy the webhook URL
+
+5. Update API `.env`:
+```env
+N8N_WEBHOOK_SECRET=same_secret_as_n8n
+N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/friction-finder
+```
+
+#### 3) Test the Flow
+
+**Option A: With VAPI (full integration)**
+1. Visit `http://localhost:3000/voice`
+2. Fill in your info and click "Start Voice Call"
+3. Talk to the VAPI bot about friction points
+4. After call ends, wait for n8n to generate report
+5. View report when ready
+
+**Option B: Without VAPI (test workflow only)**
+1. Create a session:
+```bash
+curl -X POST http://localhost:8000/intake/session \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test","email":"test@example.com","team":"Engineering","role":"Developer"}'
+```
+
+2. Submit a VAPI webhook (simulate call):
+```bash
+curl -X POST http://localhost:8000/intake/vapi \
+  -H "Content-Type: application/json" \
+  -H "x-webhook-secret: your_vapi_secret" \
+  -d @examples/vapi_webhook.json
+```
+
+3. n8n workflow will trigger automatically
+4. Check report:
+```bash
+curl http://localhost:8000/report/latest \
+  -H "x-app-password: changeme"
+```
+
+### Architecture: VAPI → API → n8n
+
+```
+┌──────────┐     ┌─────────────┐     ┌──────────┐     ┌─────────┐
+│ Voice UI │ ──> │ VAPI Bot    │ ──> │ API      │ ──> │ n8n     │
+│ (React)  │     │ (Phone AI)  │     │ /intake  │     │ Workflow│
+└──────────┘     └─────────────┘     └──────────┘     └─────────┘
+                                            │                │
+                                            ▼                ▼
+                                      ┌──────────┐     ┌─────────┐
+                                      │ Database │     │ OpenAI  │
+                                      │ (Pain Pt)│     │ (Summary│
+                                      └──────────┘     └─────────┘
+                                            │                │
+                                            ▼                ▼
+                                      ┌───────────────────────┐
+                                      │ /report/attach        │
+                                      │ (Report registry)     │
+                                      └───────────────────────┘
+```
+
+### n8n Workflow Details
+
+See [docs/n8n_workflow.md](docs/n8n_workflow.md) for complete documentation.
+
+**Workflow steps:**
+1. Webhook receives trigger from API
+2. Fetches interview and pain point data
+3. AI analyzes and generates summary + recommendations
+4. Attaches report to database
+5. (Optional) Sends Slack/email notifications
+
+### Troubleshooting
+
+**n8n workflow not triggering:**
+- Check `N8N_WEBHOOK_URL` is correct in API `.env`
+- Verify `N8N_WEBHOOK_SECRET` matches in both API and n8n
+- Check n8n workflow is activated
+- Test webhook manually with curl
+
+**VAPI not sending data:**
+- Check VAPI assistant is configured with correct webhook URL
+- Ensure `metadata` includes `session_id` from `/intake/session`
+- Verify `VAPI_WEBHOOK_SECRET` in API `.env`
+
+**Report not appearing:**
+- Check n8n execution logs for errors
+- Verify OpenAI API key is configured in n8n
+- Check `/report/latest` endpoint manually
+- Look for errors in API logs
+
 ## Tests
 
 ```bash

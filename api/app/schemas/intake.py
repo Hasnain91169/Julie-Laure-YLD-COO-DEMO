@@ -45,3 +45,17 @@ class IntakeResponse(BaseModel):
     interview_id: int
     respondent_id: int
     pain_point_ids: list[int]
+
+
+class SessionRequest(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    team: str = "Unknown"
+    role: str = "Unknown"
+    location: str | None = None
+    consent: bool = False
+
+
+class SessionResponse(BaseModel):
+    session_id: str
+    respondent_id: int

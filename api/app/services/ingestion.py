@@ -1,6 +1,8 @@
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.models.interview import Interview
 from app.models.pain_point import PainPoint
 from app.models.respondent import Respondent
@@ -64,6 +66,10 @@ class IntakeIngestionService:
         session.commit()
         session.refresh(respondent)
         session.refresh(interview)
+
+        # Trigger n8n workflow if configured
+        await self._trigger_n8n(interview.id, canonical.metadata_json.get("session_id"), respondent.id)
+
         return interview.id, respondent.id, pain_point_ids
 
     def _upsert_respondent(self, session: Session, canonical: CanonicalIntake) -> Respondent:
@@ -93,3 +99,24 @@ class IntakeIngestionService:
         session.add(respondent)
         session.flush()
         return respondent
+
+    async def _trigger_n8n(self, interview_id: int, session_id: str | None, respondent_id: int) -> None:
+        """Trigger n8n workflow after successful intake.
+
+        Sends interview_id, session_id, and respondent_id to configured n8n webhook.
+        Fails silently if n8n is not configured or unavailable.
+        """
+        settings = get_settings()
+        if not settings.n8n_webhook_url:
+            return
+
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                await client.post(
+                    settings.n8n_webhook_url,
+                    json={"interview_id": interview_id, "session_id": session_id, "respondent_id": respondent_id},
+                    headers={"x-webhook-secret": settings.n8n_webhook_secret or ""},
+                )
+        except Exception:
+            # Don't fail intake if n8n is down
+            pass

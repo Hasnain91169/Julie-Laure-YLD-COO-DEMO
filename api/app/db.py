@@ -25,6 +25,6 @@ def get_session() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    from app.models import interview, pain_point, respondent, score  # noqa: F401
+    from app.models import interview, pain_point, report_run, respondent, score  # noqa: F401
 
     Base.metadata.create_all(bind=engine)

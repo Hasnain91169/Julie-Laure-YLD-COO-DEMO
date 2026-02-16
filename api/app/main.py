@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import dashboard, demo, health, intake, interviews, pain_points, report, respondents, scores
+from app.api import chatbot, dashboard, demo, health, intake, interviews, pain_points, report, respondents, scores
 from app.config import get_settings
 from app.db import init_db
 
@@ -38,3 +38,4 @@ app.include_router(scores.router)
 app.include_router(dashboard.router)
 app.include_router(report.router)
 app.include_router(demo.router)
+app.include_router(chatbot.router)

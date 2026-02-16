@@ -90,9 +90,39 @@ export async function apiGet<T>(path: string): Promise<T> {
   return apiFetch<T>(path, { method: "GET" });
 }
 
+export async function apiPost<T>(path: string, body: unknown): Promise<T> {
+  return apiFetch<T>(path, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export async function apiPut<T>(path: string, body: unknown): Promise<T> {
   return apiFetch<T>(path, {
     method: "PUT",
     body: JSON.stringify(body),
   });
+}
+
+export async function pollUntil<T>(
+  fetcher: () => Promise<T>,
+  condition: (result: T) => boolean,
+  intervalMs = 2000,
+  maxAttempts = 30
+): Promise<T> {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const result = await fetcher();
+      if (condition(result)) {
+        return result;
+      }
+    } catch (error) {
+      // Continue polling even on error (e.g., 404 when report doesn't exist yet)
+      if (i === maxAttempts - 1) {
+        throw error;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error("Polling timeout - max attempts reached");
 }

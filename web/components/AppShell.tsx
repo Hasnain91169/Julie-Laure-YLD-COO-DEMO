@@ -11,7 +11,6 @@ const links = [
   { href: "/pain-points", label: "Pain Points" },
   { href: "/coo-chat", label: "COO Chat" },
   { href: "/report", label: "Report" },
-  { href: "/voice", label: "Voice" },
   { href: "/demo", label: "Demo" },
 ];
 

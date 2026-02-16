@@ -38,8 +38,10 @@ class COOChatService:
             interview_id, respondent_id, pain_point_ids = await self.ingestion_service.ingest(session, canonical)
             added_to_report = len(pain_point_ids) > 0
 
+        assistant_message = self._normalize_assistant_message(str(analysis["assistant_message"]))
+
         return COOChatResponse(
-            assistant_message=str(analysis["assistant_message"]),
+            assistant_message=assistant_message,
             needs_more_info=bool(analysis["needs_more_info"]),
             valid_concern=bool(analysis["valid_concern"]),
             root_cause=analysis.get("root_cause"),
@@ -52,6 +54,11 @@ class COOChatService:
             pain_point_ids=pain_point_ids,
             created_at=datetime.now(timezone.utc),
         )
+
+    def _normalize_assistant_message(self, text: str) -> str:
+        if text.startswith("This is useful context. Could you share one more detail:"):
+            return "Thanks, this helps. One quick detail would make this stronger: either frequency per week or time impact."
+        return text
 
     def _to_canonical_intake(self, request: COOChatRequest, analysis: dict[str, Any]) -> CanonicalIntake:
         context = request.context

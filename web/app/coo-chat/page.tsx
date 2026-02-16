@@ -11,6 +11,13 @@ const starterMessage: ChatMessage = {
   content: "Share what is not working operationally, and I will help unpack the root cause step by step.",
 };
 
+const STORAGE_KEY = "ff_coo_chat_state";
+
+type StoredChatState = {
+  messages: ChatMessage[];
+  result: COOChatResponse | null;
+};
+
 export default function COOChatPage() {
   const [context] = useState<COOChatContext>({
     name: "",
@@ -26,6 +33,7 @@ export default function COOChatPage() {
   const [result, setResult] = useState<COOChatResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const conversationRef = useRef<HTMLDivElement | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   const payloadMessages = useMemo(
     () => messages.filter((m) => m.role === "user" || (m.role === "assistant" && m !== starterMessage)),
@@ -38,6 +46,40 @@ export default function COOChatPage() {
     }
     conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
   }, [messages, loading]);
+
+  useEffect(() => {
+    if (hydrated || typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        setHydrated(true);
+        return;
+      }
+      const parsed = JSON.parse(raw) as StoredChatState;
+      if (Array.isArray(parsed.messages) && parsed.messages.length > 0) {
+        setMessages(parsed.messages);
+      }
+      if (parsed.result) {
+        setResult(parsed.result);
+      }
+    } catch {
+      // Ignore corrupted local state.
+    } finally {
+      setHydrated(true);
+    }
+  }, [hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") {
+      return;
+    }
+
+    const payload: StoredChatState = { messages, result };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  }, [messages, result, hydrated]);
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -53,14 +95,23 @@ export default function COOChatPage() {
     setError(null);
 
     try {
-      const response = await apiPost<COOChatResponse>("/chatbot/coo", {
+      const analysisResponse = await apiPost<COOChatResponse>("/chatbot/coo", {
         messages: nextMessages.filter((m) => m.role !== "assistant" || m !== starterMessage),
         context,
         add_to_report: false,
       });
 
-      setResult(response);
-      setMessages((prev) => [...prev, { role: "assistant", content: response.assistant_message }]);
+      let finalResponse = analysisResponse;
+      if (analysisResponse.valid_concern && !analysisResponse.needs_more_info) {
+        finalResponse = await apiPost<COOChatResponse>("/chatbot/coo", {
+          messages: nextMessages.filter((m) => m.role !== "assistant" || m !== starterMessage),
+          context,
+          add_to_report: true,
+        });
+      }
+
+      setResult(finalResponse);
+      setMessages((prev) => [...prev, { role: "assistant", content: finalResponse.assistant_message }]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send message");
     } finally {
@@ -141,10 +192,10 @@ export default function COOChatPage() {
           <button
             type="button"
             className="btn-secondary"
-            disabled={loading || payloadMessages.length === 0 || !result?.valid_concern || !!result?.needs_more_info}
+            disabled={loading || payloadMessages.length === 0}
             onClick={analyzeAndAdd}
           >
-            Add Valid Concern to Report
+            Re-run Analysis + Add
           </button>
           {result ? (
             <p className="text-sm text-slate-600">

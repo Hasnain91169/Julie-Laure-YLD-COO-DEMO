@@ -8,12 +8,11 @@ import type { COOChatContext, COOChatResponse, ChatMessage } from "@/lib/types";
 
 const starterMessage: ChatMessage = {
   role: "assistant",
-  content:
-    "I can help you investigate an operational complaint as the COO. Describe the issue, where it happens, and who is affected.",
+  content: "Share what is not working operationally, and I will help unpack the root cause step by step.",
 };
 
 export default function COOChatPage() {
-  const [context, setContext] = useState<COOChatContext>({
+  const [context] = useState<COOChatContext>({
     name: "",
     email: "",
     team: "COO Office",
@@ -62,7 +61,7 @@ export default function COOChatPage() {
   }
 
   async function analyzeAndAdd() {
-    if (loading) {
+    if (loading || payloadMessages.length === 0) {
       return;
     }
 
@@ -90,46 +89,18 @@ export default function COOChatPage() {
         <p className="text-xs uppercase tracking-[0.16em] text-emerald-200">COO Assistant</p>
         <h2 className="mt-2 text-3xl font-semibold tracking-tight">Complaint Root-Cause Chatbot</h2>
         <p className="mt-2 max-w-3xl text-sm text-emerald-100">
-          The assistant asks probing questions, checks concern validity, and can add validated issues straight into the automation report backlog.
+          Analysis runs quietly in the background while you chat. When a concern is validated, you can add it to the report backlog.
         </p>
       </section>
 
       <section className="card p-4">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.13em] text-slate-500">Context</h3>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
-          <input
-            className="input"
-            placeholder="Name (optional)"
-            value={context.name || ""}
-            onChange={(e) => setContext({ ...context, name: e.target.value })}
-          />
-          <input
-            className="input"
-            placeholder="Email (optional)"
-            value={context.email || ""}
-            onChange={(e) => setContext({ ...context, email: e.target.value })}
-          />
-          <input className="input" value={context.team} onChange={(e) => setContext({ ...context, team: e.target.value })} />
-          <input className="input" value={context.role} onChange={(e) => setContext({ ...context, role: e.target.value })} />
-          <input
-            className="input md:col-span-2"
-            placeholder="Location (optional)"
-            value={context.location || ""}
-            onChange={(e) => setContext({ ...context, location: e.target.value })}
-          />
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-sm font-semibold uppercase tracking-[0.13em] text-slate-500">Conversation</h3>
+          <div className="text-xs text-slate-500">
+            {loading ? "Analyzing..." : result ? `Last update: ${new Date(result.created_at).toLocaleTimeString()}` : "Live analysis"}
+          </div>
         </div>
-        <label className="mt-3 inline-flex items-center gap-2 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={context.consent}
-            onChange={(e) => setContext({ ...context, consent: e.target.checked })}
-          />
-          Consent to store transcript text
-        </label>
-      </section>
 
-      <section className="card mt-4 p-4">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.13em] text-slate-500">Conversation</h3>
         <div className="mt-3 max-h-[420px] space-y-3 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
           {messages.map((msg, idx) => (
             <div
@@ -148,7 +119,7 @@ export default function COOChatPage() {
             className="input"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Describe the complaint, impact, and context"
+            placeholder="Tell me what is happening"
           />
           <button type="submit" className="btn-primary min-w-24" disabled={loading || !draft.trim()}>
             Send
@@ -156,43 +127,33 @@ export default function COOChatPage() {
         </form>
 
         <div className="mt-3 flex flex-wrap gap-2">
-          <button type="button" className="btn-secondary" disabled={loading || payloadMessages.length === 0} onClick={analyzeAndAdd}>
-            Analyse + Add to Report
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={loading || payloadMessages.length === 0 || !result?.valid_concern || !!result?.needs_more_info}
+            onClick={analyzeAndAdd}
+          >
+            Add Valid Concern to Report
           </button>
-          {loading ? <p className="text-sm text-slate-500">Thinking...</p> : null}
+          {result ? (
+            <p className="text-sm text-slate-600">
+              {result.valid_concern && !result.needs_more_info ? "Valid concern detected." : "Listening and building signal."}
+            </p>
+          ) : null}
         </div>
 
         {error ? <p className="mt-2 text-sm text-red-700">{error}</p> : null}
+        {result?.root_cause ? (
+          <p className="mt-3 text-sm text-slate-700">
+            <strong>Current root-cause signal:</strong> {result.root_cause}
+          </p>
+        ) : null}
+        {result?.added_to_report ? (
+          <p className="mt-3 rounded-lg bg-emerald-100 px-3 py-2 text-sm text-emerald-800">
+            Added to report backlog. Pain point IDs: {result.pain_point_ids.join(", ")}
+          </p>
+        ) : null}
       </section>
-
-      {result ? (
-        <section className="card mt-4 p-4">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.13em] text-slate-500">Assessment</h3>
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
-            <Metric label="Valid Concern" value={result.valid_concern ? "Yes" : "No"} />
-            <Metric label="Needs More Info" value={result.needs_more_info ? "Yes" : "No"} />
-            <Metric label="Category" value={result.category} />
-            <Metric label="Estimated Impact (h/week)" value={result.estimated_impact_hours_per_week.toString()} />
-          </div>
-          <p className="mt-3 text-sm text-slate-700"><strong>Root Cause:</strong> {result.root_cause || "Not enough signal yet"}</p>
-          <p className="mt-2 text-sm text-slate-600">{result.rationale}</p>
-
-          {result.added_to_report ? (
-            <p className="mt-3 rounded-lg bg-emerald-100 px-3 py-2 text-sm text-emerald-800">
-              Added to report backlog. Pain point IDs: {result.pain_point_ids.join(", ")}
-            </p>
-          ) : null}
-        </section>
-      ) : null}
     </AppShell>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-      <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-slate-800">{value}</p>
-    </div>
   );
 }

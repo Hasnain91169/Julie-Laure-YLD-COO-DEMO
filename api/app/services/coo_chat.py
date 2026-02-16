@@ -102,7 +102,8 @@ class COOChatService:
 
     async def _analyze_with_llm(self, request: COOChatRequest) -> dict[str, Any] | None:
         system_prompt = (
-            "You are a COO complaint intake copilot. Ask probing questions, identify root cause, and determine if concern is valid. "
+            "You are a calm COO complaint intake copilot. Ask one gentle probing question at a time, identify root cause, and determine if concern is valid. "
+            "Do not sound forceful or interrogative. Keep tone collaborative and concise. "
             "Respond only JSON with keys: assistant_message, needs_more_info, valid_concern, root_cause, rationale, title, "
             "description, category, frequency_per_week, minutes_per_occurrence, people_affected, systems_involved, "
             "current_workaround, failure_modes, success_definition, estimated_impact_hours_per_week."
@@ -129,7 +130,7 @@ class COOChatService:
             parsed.setdefault("frequency_per_week", 1.0)
             parsed.setdefault("minutes_per_occurrence", 30.0)
             parsed.setdefault("people_affected", 1)
-            parsed.setdefault("assistant_message", "Please share more detail so I can validate this concern.")
+            parsed.setdefault("assistant_message", "Thanks for sharing this. Could you add one more detail about frequency or impact?")
             parsed.setdefault("rationale", "Insufficient signal.")
             parsed.setdefault("valid_concern", False)
             parsed.setdefault("needs_more_info", True)
@@ -214,22 +215,20 @@ class COOChatService:
 
         if not transcript:
             assistant_message = (
-                "Please describe the operational issue you want investigated, including where it happens and how often."
+                "Thanks for raising this. What is the main issue you are seeing in operations?"
             )
         elif needs_more_info:
             assistant_message = (
-                "I need a bit more detail to validate this concern. How often does this happen per week, "
-                "how long does each occurrence take, and which systems/teams are involved?"
+                "This is useful context. Could you share one more detail: how often this happens or how much time it usually costs?"
             )
         elif valid_concern:
             assistant_message = (
-                "This looks like a valid operational concern. I have identified a likely root cause and impact. "
-                "If you confirm, I can add it to the automation report backlog now."
+                "Understood. This looks like a valid operational concern with measurable impact. "
+                "I can add it to the report backlog whenever you are ready."
             )
         else:
             assistant_message = (
-                "I captured your concern, but based on current detail it may not be a high-priority automation issue yet. "
-                "Can you share concrete impact metrics so I can reassess?"
+                "I have captured the issue. With a little more impact data, I can reassess whether it should be prioritized in the backlog."
             )
 
         root_cause = (

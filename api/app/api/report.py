@@ -1,5 +1,5 @@
 import json
-from io import BytesIO
+import logging
 from pathlib import Path
 from typing import Any, Literal
 
@@ -16,22 +16,35 @@ from app.models.report_run import ReportRun
 from app.schemas.report import AttachReportRequest, ReportRunResponse
 from app.services.analytics import report_context
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["report"], dependencies=[Depends(require_app_password)])
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
 TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
 REPORT_CSS_PATH = TEMPLATE_DIR / "report.css"
+
 CURRENCY_SYMBOLS: dict[str, str] = {"GBP": "£", "USD": "$", "EUR": "€"}
 DEFAULT_CURRENCY = "GBP"
-DEFAULT_HOURLY_RATE = 60.0
+DEFAULT_HOURLY_RATE = 30.0
+MIN_HOURLY_RATE = 10.0
+MAX_HOURLY_RATE = 300.0
+
+
+def _report_query_params(
+    hourly_rate: float = Query(default=DEFAULT_HOURLY_RATE, ge=MIN_HOURLY_RATE, le=MAX_HOURLY_RATE),
+    currency: Literal["GBP", "USD", "EUR"] = DEFAULT_CURRENCY,
+) -> tuple[float, Literal["GBP", "USD", "EUR"]]:
+    return hourly_rate, currency
 
 
 @router.get("/report", response_class=HTMLResponse)
+@router.get("/report.html", response_class=HTMLResponse)
 def get_report(
     request: Request,
-    hourly_rate: float = Query(default=DEFAULT_HOURLY_RATE, ge=10, le=500),
-    currency: Literal["GBP", "USD", "EUR"] = DEFAULT_CURRENCY,
+    params: tuple[float, Literal["GBP", "USD", "EUR"]] = Depends(_report_query_params),
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
+    hourly_rate, currency = params
     context = _build_report_view_model(
         report_context(session),
         hourly_rate=hourly_rate,
@@ -43,11 +56,10 @@ def get_report(
 
 @router.get("/report.pdf")
 def get_report_pdf(
-    request: Request,
-    hourly_rate: float = Query(default=DEFAULT_HOURLY_RATE, ge=10, le=500),
-    currency: Literal["GBP", "USD", "EUR"] = DEFAULT_CURRENCY,
+    params: tuple[float, Literal["GBP", "USD", "EUR"]] = Depends(_report_query_params),
     session: Session = Depends(get_session),
 ) -> Response:
+    hourly_rate, currency = params
     context = _build_report_view_model(
         report_context(session),
         hourly_rate=hourly_rate,
@@ -57,11 +69,16 @@ def get_report_pdf(
     html = templates.get_template("report.html").render(**context)
 
     try:
-        from weasyprint import HTML
+        from weasyprint import HTML  # type: ignore
 
+        logger.info("PDF engine status: weasyprint available")
         pdf = HTML(string=html, base_url=str(TEMPLATE_DIR)).write_pdf()
-    except Exception:
-        pdf = _build_reportlab_pdf(context)
+    except Exception as exc:
+        logger.exception("PDF engine status: weasyprint unavailable or failed")
+        raise HTTPException(
+            status_code=500,
+            detail="PDF export is currently unavailable. HTML report remains available at /report.html.",
+        ) from exc
 
     headers = {"Content-Disposition": "attachment; filename=friction-finder-report.pdf"}
     return Response(content=pdf, media_type="application/pdf", headers=headers)
@@ -148,7 +165,7 @@ def _build_report_view_model(
         )
 
     quick_wins = [item for item in ranked_backlog if _safe_int(item.get("effort_score")) <= 2]
-    medium_impact = [item for item in ranked_backlog if 3 <= _safe_int(item.get("effort_score")) <= 3]
+    medium_impact = [item for item in ranked_backlog if _safe_int(item.get("effort_score")) == 3]
     strategic = [item for item in ranked_backlog if _safe_int(item.get("effort_score")) >= 4]
 
     max_team_total = max((_safe_int(row.get("total", 0)) for row in team_breakdown), default=1)
@@ -156,26 +173,14 @@ def _build_report_view_model(
     for row in team_breakdown:
         total = _safe_int(row.get("total", 0))
         width = (total / max_team_total * 100) if max_team_total else 0
-        team_rows.append(
-            {
-                **row,
-                "total_fmt": str(total),
-                "bar_width_pct": _fmt_number(width, 0),
-            }
-        )
+        team_rows.append({**row, "total_fmt": str(total), "bar_width_pct": _fmt_number(width, 0)})
 
     max_category_total = max((_safe_int(row.get("count", 0)) for row in category_breakdown), default=1)
     category_rows: list[dict[str, Any]] = []
     for row in category_breakdown:
         count = _safe_int(row.get("count", 0))
         width = (count / max_category_total * 100) if max_category_total else 0
-        category_rows.append(
-            {
-                **row,
-                "count_fmt": str(count),
-                "bar_width_pct": _fmt_number(width, 0),
-            }
-        )
+        category_rows.append({**row, "count_fmt": str(count), "bar_width_pct": _fmt_number(width, 0)})
 
     css_text = ""
     if REPORT_CSS_PATH.exists():
@@ -207,191 +212,8 @@ def _build_report_view_model(
     }
 
 
-def _build_reportlab_pdf(context: dict[str, Any]) -> bytes:
-    try:
-        from reportlab.lib import colors
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-        from reportlab.lib.units import inch
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-    except Exception as exc:
-        raise HTTPException(status_code=501, detail="No PDF engine available") from exc
-
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        leftMargin=0.6 * inch,
-        rightMargin=0.6 * inch,
-        topMargin=0.6 * inch,
-        bottomMargin=0.6 * inch,
-        title="Friction Finder COO Report",
-    )
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        "TitleStyle",
-        parent=styles["Heading1"],
-        fontName="Helvetica-Bold",
-        fontSize=18,
-        leading=22,
-        textColor=colors.HexColor("#102132"),
-        spaceAfter=8,
-    )
-    h2_style = ParagraphStyle(
-        "H2Style",
-        parent=styles["Heading2"],
-        fontName="Helvetica-Bold",
-        fontSize=12,
-        leading=15,
-        textColor=colors.HexColor("#173a56"),
-        spaceAfter=6,
-        spaceBefore=10,
-    )
-    body_style = ParagraphStyle(
-        "BodyStyle",
-        parent=styles["BodyText"],
-        fontName="Helvetica",
-        fontSize=9.5,
-        leading=13,
-    )
-    small_style = ParagraphStyle(
-        "SmallStyle",
-        parent=styles["BodyText"],
-        fontName="Helvetica",
-        fontSize=8.5,
-        leading=11.5,
-        textColor=colors.HexColor("#4a5968"),
-    )
-
-    story: list[Any] = []
-    story.append(Paragraph("Friction Finder COO Report", title_style))
-    story.append(Paragraph(f"Generated: {context.get('generated', '-')}", small_style))
-    story.append(Spacer(1, 10))
-
-    kpis = context.get("kpis", {})
-    kpi_rows = [
-        ["Pain Points", str(kpis.get("total_pain_points", 0)), "Hours Lost / Week", str(kpis.get("total_hours_per_week", 0.0))],
-        ["Quick Wins", str(len(kpis.get("quick_wins", []))), "Top Backlog", str(len(context.get("top_backlog", [])))],
-    ]
-    kpi_table = Table(kpi_rows, colWidths=[1.7 * inch, 1.2 * inch, 1.7 * inch, 1.2 * inch])
-    kpi_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f7fb")),
-                ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#102132")),
-                ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d2dce6")),
-                ("ALIGN", (1, 0), (1, -1), "CENTER"),
-                ("ALIGN", (3, 0), (3, -1), "CENTER"),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ]
-        )
-    )
-    story.append(kpi_table)
-
-    story.append(Paragraph("Executive Summary: Top Quick Wins", h2_style))
-    quick_wins = context.get("executive_quick_wins", [])
-    if quick_wins:
-        for idx, item in enumerate(quick_wins, 1):
-            text = (
-                f"<b>{idx}. {item.get('title', '-')}</b><br/>"
-                f"Team: {item.get('team', '-')}, Impact: {item.get('impact_hours_per_week', 0)} h/week, "
-                f"Priority: {item.get('priority_score', 0)}"
-            )
-            story.append(Paragraph(text, body_style))
-            story.append(Spacer(1, 5))
-    else:
-        story.append(Paragraph("No quick wins currently meet threshold.", body_style))
-
-    story.append(Paragraph("Top 10 Ranked Automation Backlog", h2_style))
-    backlog = context.get("top_backlog", [])
-    if backlog:
-        backlog_rows: list[list[str]] = [["#", "Pain Point", "Team", "Category", "Impact", "Effort", "Conf.", "Priority"]]
-        for idx, item in enumerate(backlog[:10], 1):
-            backlog_rows.append(
-                [
-                    str(idx),
-                    str(item.get("title", "-"))[:55],
-                    str(item.get("team", "-")),
-                    str(item.get("category", "-")),
-                    str(item.get("impact_hours_per_week", "-")),
-                    str(item.get("effort_score", "-")),
-                    str(item.get("confidence_score", "-")),
-                    str(item.get("priority_score", "-")),
-                ]
-            )
-        backlog_table = Table(
-            backlog_rows,
-            colWidths=[0.3 * inch, 2.5 * inch, 1.0 * inch, 0.8 * inch, 0.65 * inch, 0.5 * inch, 0.55 * inch, 0.7 * inch],
-            repeatRows=1,
-        )
-        backlog_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f466f")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 8),
-                    ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#d2dce6")),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fbff")]),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                ]
-            )
-        )
-        story.append(backlog_table)
-    else:
-        story.append(Paragraph("No backlog items available.", body_style))
-
-    story.append(Paragraph("Team and Category Breakdown", h2_style))
-    team_breakdown = context.get("team_breakdown", [])
-    category_breakdown = context.get("category_breakdown", [])
-    summary_rows = [["Type", "Name", "Count"]]
-    summary_rows.extend([["Team", str(t.get("team", "-")), str(t.get("total", 0))] for t in team_breakdown[:8]])
-    summary_rows.extend([["Category", str(c.get("category", "-")), str(c.get("count", 0))] for c in category_breakdown[:8]])
-    summary_table = Table(summary_rows, colWidths=[0.9 * inch, 3.8 * inch, 1.0 * inch], repeatRows=1)
-    summary_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e8f1f8")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#d2dce6")),
-                ("FONTSIZE", (0, 0), (-1, -1), 8.5),
-                ("ALIGN", (2, 1), (2, -1), "CENTER"),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#fafcff")]),
-            ]
-        )
-    )
-    story.append(summary_table)
-
-    story.append(Paragraph("Systems Involved Map", h2_style))
-    systems = context.get("systems_map", [])
-    if systems:
-        systems_text = ", ".join([f"{s.get('system', '-')}: {s.get('mentions', 0)}" for s in systems[:12]])
-        story.append(Paragraph(systems_text, body_style))
-    else:
-        story.append(Paragraph("No systems identified yet.", body_style))
-
-    quotes = context.get("quotes", [])
-    if quotes:
-        story.append(Paragraph("Appendix: Anonymised Quotes", h2_style))
-        for quote in quotes[:12]:
-            quote_text = f"\"{quote.get('quote', '')}\"<br/><font color='#5a6b7c'>Pain Point #{quote.get('pain_point_id', '-')}, Team {quote.get('team', '-')}</font>"
-            story.append(Paragraph(quote_text, small_style))
-            story.append(Spacer(1, 4))
-
-    doc.build(story)
-    pdf = buffer.getvalue()
-    buffer.close()
-    return pdf
-
-
 @router.get("/report/latest", response_model=ReportRunResponse, dependencies=[Depends(require_app_password)])
 def get_latest_report(session_id: str | None = None, session: Session = Depends(get_session)) -> ReportRunResponse:
-    """Get the latest report run, optionally filtered by session_id."""
     query = select(ReportRun)
     if session_id:
         query = query.where(ReportRun.session_id == session_id)
@@ -419,11 +241,6 @@ def attach_report(
     session: Session = Depends(get_session),
     _: None = Depends(lambda: require_webhook_secret(get_settings().n8n_webhook_secret)),
 ) -> ReportRunResponse:
-    """Attach a report generated by n8n workflow.
-
-    Protected by n8n webhook secret. Creates a new ReportRun record.
-    """
-    # Stringify recommendations_json if provided
     recommendations_str = None
     if request.recommendations_json:
         recommendations_str = json.dumps(request.recommendations_json)

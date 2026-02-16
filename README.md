@@ -6,38 +6,79 @@ Portfolio-grade MVP to identify operational friction across People, Finance, Eng
 
 ```text
 .
-+- api/                   FastAPI backend, adapters, scoring, reporting, seed data, tests
-+- web/                   Next.js admin UI
-+- examples/              Sample intake payloads
-+- docker-compose.yml     Full stack compose (api + web + optional postgres)
-+- .env.example
+|- api/                   FastAPI backend, adapters, scoring, reporting, seed data, tests
+|- web/                   Next.js admin UI (App Router)
+|- examples/              Sample intake payloads
+|- docker-compose.yml     Full stack compose (api + web + optional postgres)
+`- .env.example
 ```
 
 ## Core Architecture
 
-- Provider-agnostic intake via adapter contract (`api/app/adapters/base.py`):
-  - `VapiIntakeAdapter` (`/intake/vapi`)
-  - `InternalIntakeAdapter` (`/intake/internal`)
-- Both map payloads into a canonical schema: `CanonicalIntake` (`api/app/schemas/intake.py`)
-- Ingestion writes canonical data to shared tables and computes deterministic scores.
+- Provider-agnostic intake via adapter contract (`api/app/adapters/base.py`)
+  - `VapiIntakeAdapter` (`POST /intake/vapi`)
+  - `InternalIntakeAdapter` (`POST /intake/internal`)
+- Both map payloads into canonical schema `CanonicalIntake` (`api/app/schemas/intake.py`)
+- Ingestion writes canonical data to shared tables and computes deterministic scores
 
-## Backend Features
+## Backend API Highlights
 
-- Intake endpoints:
+- Intake:
   - `POST /intake/vapi`
   - `POST /intake/internal`
-- CRUD:
-  - `respondents`, `interviews`, `pain-points`
+  - `POST /intake/session`
+- Core data:
+  - `GET/POST /respondents`
+  - `GET/POST /interviews`
+  - `GET/POST/DELETE /pain-points`
+  - `GET /pain-points/{id}`
 - Scoring:
+  - `GET /scores/{pain_point_id}`
   - `POST /scores/recompute`
 - Analytics/reporting:
   - `GET /dashboard`
-  - `GET /report` (HTML)
-  - `GET /report.pdf` (PDF)
-- Demo mode:
+  - `GET /report`
+  - `GET /report.html`
+  - `GET /report.pdf`
+  - `GET /report/latest`
+- Demo:
   - `POST /demo/seed?interview_count=24&reset=true`
+- COO chatbot:
+  - `POST /chatbot/coo`
 
-### Scoring Model (transparent)
+## Report Behavior (HTML + PDF)
+
+### Auth
+
+Report endpoints require `x-app-password`.
+
+### Query Parameters
+
+Both HTML and PDF accept:
+
+- `currency`: `GBP` | `USD` | `EUR` (default: `GBP`)
+- `hourly_rate`: numeric, validated `10..300` (default: `30`)
+
+Example:
+
+```bash
+curl "http://localhost:8000/report.html?currency=GBP&hourly_rate=40" \
+  -H "x-app-password: changeme"
+```
+
+```bash
+curl "http://localhost:8000/report.pdf?currency=GBP&hourly_rate=40" \
+  -H "x-app-password: changeme" \
+  --output friction-finder-report.pdf
+```
+
+### PDF Engine Fallback
+
+- Primary: WeasyPrint (styled HTML -> PDF)
+- Fallback: ReportLab (if WeasyPrint dependencies are unavailable at runtime)
+- If both fail, API returns `500` and HTML report remains available.
+
+## Scoring Model (Transparent)
 
 - `impact_hours_per_week = (frequency_per_week * minutes_per_occurrence / 60) * max(1, people_affected)`
 - `effort_score` is rule-based from complexity/system count (1..5)
@@ -45,23 +86,23 @@ Portfolio-grade MVP to identify operational friction across People, Finance, Eng
 - `priority_score = (impact_hours_per_week * confidence_score) / effort_score`
 - `quick_win` when `effort_score <= 2` and impact >= `REPORT_QUICKWIN_IMPACT_THRESHOLD_HOURS`
 
-### Privacy Guardrails
+## Privacy Guardrails
 
 - `consent` gates storage of `transcript_raw`
 - Regex redaction pipeline for email/phone/name hints
 - `sensitive_flag` hides transcript context and excludes quotes from report appendix
 - External AI calls disabled by default (`AI_PROVIDER=none`)
 
-## Frontend Features
-
-Pages:
+## Frontend Pages
 
 - `/login`
 - `/dashboard`
 - `/pain-points`
 - `/pain-points/[id]`
 - `/report`
+- `/coo-chat`
 - `/demo`
+- `/voice` (if enabled in your environment)
 
 Simple password gate uses `APP_PASSWORD` via `x-app-password` header.
 
@@ -90,8 +131,8 @@ npm run dev
 
 Open:
 
-- Web: http://localhost:3000
-- API docs: http://localhost:8000/docs
+- Web: `http://localhost:3000`
+- API docs: `http://localhost:8000/docs`
 
 ## Demo Mode
 
@@ -129,18 +170,14 @@ curl -X POST http://localhost:8000/intake/internal \
   -d @examples/internal_intake.json
 ```
 
-## Report Export
+## Report UI Notes
 
-- HTML preview: `GET /report` (requires `x-app-password`)
-- PDF: `GET /report.pdf` (requires `x-app-password`)
+The `/report` page supports:
 
-Example:
-
-```bash
-curl "http://localhost:8000/report.pdf" \
-  -H "x-app-password: changeme" \
-  --output friction-finder-report.pdf
-```
+- Currency selector (`GBP`, `USD`, `EUR`)
+- Hourly-rate presets by role plus `Custom...`
+- Querystring persistence (`currency`, `rate`) plus localStorage fallback
+- Downloaded PDF uses the same selected parameters as preview
 
 ## Docker Compose
 
@@ -154,146 +191,29 @@ Optional Postgres service:
 docker compose --profile postgres up --build
 ```
 
-If using Postgres, set:
+If using Postgres:
 
 ```env
 DATABASE_URL=postgresql+psycopg://friction:friction@db:5432/friction_finder
 ```
 
-## Voice + n8n Demo
+## Troubleshooting
 
-### Overview
+### `Failed to export PDF (500)`
 
-The voice intake feature allows users to report friction points through voice conversation powered by VAPI, with automated report generation via n8n workflows.
+- Check API logs for PDF engine status.
+- If WeasyPrint fails (common on limited runtimes), fallback PDF should still generate via ReportLab.
+- If both fail, verify backend dependencies installed from `api/requirements.txt`.
 
-**Flow:** User speaks → VAPI bot → API ingestion → n8n workflow → AI-generated report
+### CORS/preflight errors
 
-### Setup
+- Ensure `CORS_ORIGINS` includes your frontend origin.
+- Backend uses `allow_methods=["*"]` and `allow_headers=["*"]`.
 
-#### 1) Configure VAPI (Optional - for actual voice calls)
+### Unauthorized from frontend
 
-1. Create a VAPI account at [vapi.ai](https://vapi.ai)
-2. Create a new assistant configured to:
-   - Ask about friction points, team, frequency, impact
-   - Include `session_id` and `respondent_id` in metadata
-   - Send webhook to your API `/intake/vapi` endpoint
-3. Add credentials to `.env.local`:
-```env
-NEXT_PUBLIC_VAPI_PUBLIC_KEY=your_public_key
-NEXT_PUBLIC_VAPI_ASSISTANT_ID=your_assistant_id
-VAPI_WEBHOOK_SECRET=generate_a_secret
-```
-
-#### 2) Set up n8n Workflow
-
-1. Install n8n (cloud or self-hosted):
-```bash
-# Docker
-docker run -it --rm --name n8n -p 5678:5678 -v ~/.n8n:/home/node/.n8n n8nio/n8n
-
-# Or use n8n cloud at n8n.io
-```
-
-2. Import workflow:
-   - Go to Workflows → Import from File
-   - Select `examples/n8n_workflow.json`
-
-3. Configure environment variables in n8n:
-   - `API_BASE_URL`: Your API URL (e.g., `http://host.docker.internal:8000`)
-   - `APP_PASSWORD`: Your app password
-   - `N8N_WEBHOOK_SECRET`: Generate a secret
-   - Add OpenAI API credentials for AI analysis
-
-4. Activate the workflow and copy the webhook URL
-
-5. Update API `.env`:
-```env
-N8N_WEBHOOK_SECRET=same_secret_as_n8n
-N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/friction-finder
-```
-
-#### 3) Test the Flow
-
-**Option A: With VAPI (full integration)**
-1. Visit `http://localhost:3000/voice`
-2. Fill in your info and click "Start Voice Call"
-3. Talk to the VAPI bot about friction points
-4. After call ends, wait for n8n to generate report
-5. View report when ready
-
-**Option B: Without VAPI (test workflow only)**
-1. Create a session:
-```bash
-curl -X POST http://localhost:8000/intake/session \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Test","email":"test@example.com","team":"Engineering","role":"Developer"}'
-```
-
-2. Submit a VAPI webhook (simulate call):
-```bash
-curl -X POST http://localhost:8000/intake/vapi \
-  -H "Content-Type: application/json" \
-  -H "x-webhook-secret: your_vapi_secret" \
-  -d @examples/vapi_webhook.json
-```
-
-3. n8n workflow will trigger automatically
-4. Check report:
-```bash
-curl http://localhost:8000/report/latest \
-  -H "x-app-password: changeme"
-```
-
-### Architecture: VAPI → API → n8n
-
-```
-┌──────────┐     ┌─────────────┐     ┌──────────┐     ┌─────────┐
-│ Voice UI │ ──> │ VAPI Bot    │ ──> │ API      │ ──> │ n8n     │
-│ (React)  │     │ (Phone AI)  │     │ /intake  │     │ Workflow│
-└──────────┘     └─────────────┘     └──────────┘     └─────────┘
-                                            │                │
-                                            ▼                ▼
-                                      ┌──────────┐     ┌─────────┐
-                                      │ Database │     │ OpenAI  │
-                                      │ (Pain Pt)│     │ (Summary│
-                                      └──────────┘     └─────────┘
-                                            │                │
-                                            ▼                ▼
-                                      ┌───────────────────────┐
-                                      │ /report/attach        │
-                                      │ (Report registry)     │
-                                      └───────────────────────┘
-```
-
-### n8n Workflow Details
-
-See [docs/n8n_workflow.md](docs/n8n_workflow.md) for complete documentation.
-
-**Workflow steps:**
-1. Webhook receives trigger from API
-2. Fetches interview and pain point data
-3. AI analyzes and generates summary + recommendations
-4. Attaches report to database
-5. (Optional) Sends Slack/email notifications
-
-### Troubleshooting
-
-**n8n workflow not triggering:**
-- Check `N8N_WEBHOOK_URL` is correct in API `.env`
-- Verify `N8N_WEBHOOK_SECRET` matches in both API and n8n
-- Check n8n workflow is activated
-- Test webhook manually with curl
-
-**VAPI not sending data:**
-- Check VAPI assistant is configured with correct webhook URL
-- Ensure `metadata` includes `session_id` from `/intake/session`
-- Verify `VAPI_WEBHOOK_SECRET` in API `.env`
-
-**Report not appearing:**
-- Check n8n execution logs for errors
-- Verify OpenAI API key is configured in n8n
-- Check `/report/latest` endpoint manually
-- Look for errors in API logs
+- Confirm `APP_PASSWORD` matches backend and login.
+- Verify `x-app-password` header is attached by frontend API client.
 
 ## Tests
 

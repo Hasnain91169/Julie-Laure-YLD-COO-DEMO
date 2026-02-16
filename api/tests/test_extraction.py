@@ -1,5 +1,5 @@
 from app.models.enums import PainCategoryEnum
-from app.services.extraction import extract_pain_points_deterministic
+from app.services.extraction import extract_pain_points_deterministic, infer_frequency_per_week, infer_minutes, infer_people_affected
 
 
 def test_deterministic_extraction_reads_operational_signals() -> None:
@@ -25,3 +25,10 @@ def test_deterministic_extraction_falls_back_to_summary() -> None:
     assert len(items) == 1
     assert items[0].category in {PainCategoryEnum.finance_ops, PainCategoryEnum.approvals, PainCategoryEnum.other}
     assert items[0].minutes_per_occurrence >= 30
+
+
+def test_parsing_handles_ranges_and_total_team_wording() -> None:
+    text = "It happens every week and takes 6-8 hours total across the team."
+    assert infer_frequency_per_week(text) == 1.0
+    assert infer_minutes(text) == 420.0
+    assert infer_people_affected(text) == 1

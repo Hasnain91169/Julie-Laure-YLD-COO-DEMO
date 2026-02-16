@@ -54,6 +54,7 @@ SYSTEM_PATTERNS = {
 FREQUENCY_PATTERNS = [
     (re.compile(r"(\d+(?:\.\d+)?)\s*(?:times?)\s*(?:per|a)?\s*week", re.IGNORECASE), lambda m: float(m.group(1))),
     (re.compile(r"(\d+(?:\.\d+)?)\s*/\s*week", re.IGNORECASE), lambda m: float(m.group(1))),
+    (re.compile(r"every week", re.IGNORECASE), lambda _: 1.0),
     (re.compile(r"daily|every day", re.IGNORECASE), lambda _: 5.0),
     (re.compile(r"weekly|once a week", re.IGNORECASE), lambda _: 1.0),
     (re.compile(r"twice a week", re.IGNORECASE), lambda _: 2.0),
@@ -61,6 +62,8 @@ FREQUENCY_PATTERNS = [
 
 MINUTES_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(minutes?|mins?)", re.IGNORECASE)
 HOURS_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(hours?|hrs?)", re.IGNORECASE)
+MINUTES_RANGE_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(minutes?|mins?)", re.IGNORECASE)
+HOURS_RANGE_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(hours?|hrs?)", re.IGNORECASE)
 PEOPLE_PATTERN = re.compile(r"(\d+)\s*(people|engineers|analysts|consultants|team members|staff)", re.IGNORECASE)
 
 
@@ -86,6 +89,18 @@ def infer_frequency_per_week(text: str) -> float:
 
 
 def infer_minutes(text: str) -> float:
+    hour_range_match = HOURS_RANGE_PATTERN.search(text)
+    if hour_range_match:
+        low = float(hour_range_match.group(1))
+        high = float(hour_range_match.group(2))
+        return ((low + high) / 2.0) * 60
+
+    minute_range_match = MINUTES_RANGE_PATTERN.search(text)
+    if minute_range_match:
+        low = float(minute_range_match.group(1))
+        high = float(minute_range_match.group(2))
+        return (low + high) / 2.0
+
     hour_match = HOURS_PATTERN.search(text)
     if hour_match:
         return float(hour_match.group(1)) * 60
@@ -98,11 +113,16 @@ def infer_minutes(text: str) -> float:
 
 
 def infer_people_affected(text: str) -> int:
+    lowered = text.lower()
+    # Avoid double counting when the user already gave total time across the whole team.
+    if "total across team" in lowered or "across the team" in lowered or "team total" in lowered:
+        return 1
+
     match = PEOPLE_PATTERN.search(text)
     if match:
         return max(1, int(match.group(1)))
 
-    if "team" in text.lower():
+    if "team" in lowered:
         return 4
     return 1
 

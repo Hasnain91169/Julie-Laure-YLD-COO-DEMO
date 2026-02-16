@@ -13,6 +13,7 @@ from app.schemas.intake import CanonicalIntake, CanonicalPainPoint, CanonicalRes
 from app.services.extraction import (
     extract_pain_points_deterministic,
     infer_category,
+    infer_frequency_per_week,
     infer_minutes,
     infer_people_affected,
     infer_systems,
@@ -27,6 +28,7 @@ class COOChatService:
 
     async def handle(self, session: Session, request: COOChatRequest) -> COOChatResponse:
         analysis = await self._analyze(request)
+        analysis = self._stabilize_analysis(request, analysis)
 
         added_to_report = False
         interview_id = None
@@ -59,6 +61,59 @@ class COOChatService:
         if text.startswith("This is useful context. Could you share one more detail:"):
             return "Thanks, this helps. One quick detail would make this stronger: either frequency per week or time impact."
         return text
+
+    def _stabilize_analysis(self, request: COOChatRequest, analysis: dict[str, Any]) -> dict[str, Any]:
+        """Stabilize model output with deterministic parsing so impact isn't understated."""
+        user_messages = [m.content.strip() for m in request.messages if m.role.lower() == "user" and m.content.strip()]
+        transcript = "\n".join(user_messages)
+        summary = user_messages[-1] if user_messages else ""
+        extracted = extract_pain_points_deterministic(transcript, summary)
+        candidate = extracted[0] if extracted else None
+
+        frequency_det = infer_frequency_per_week(transcript)
+        minutes_det = infer_minutes(transcript)
+        people_det = infer_people_affected(transcript)
+
+        frequency_model = float(analysis.get("frequency_per_week") or 0.0)
+        minutes_model = float(analysis.get("minutes_per_occurrence") or 0.0)
+        people_model = int(analysis.get("people_affected") or 0)
+
+        has_explicit_frequency = bool(
+            re.search(r"\b(\d+\s*(times?|x)\s*(per|a)?\s*week|\d+\s*/\s*week|every week|weekly|daily|every day)\b", transcript, flags=re.IGNORECASE)
+        )
+        has_explicit_duration = bool(
+            re.search(r"\b(\d+(\.\d+)?\s*(minutes?|mins?|hours?|hrs?)|\d+(\.\d+)?\s*(?:-|to)\s*\d+(\.\d+)?\s*(minutes?|mins?|hours?|hrs?))\b", transcript, flags=re.IGNORECASE)
+        )
+        has_explicit_people = bool(
+            re.search(r"\b\d+\s*(people|engineers|analysts|consultants|team members|staff)\b", transcript, flags=re.IGNORECASE)
+            or re.search(r"\b(total across team|across the team|team total)\b", transcript, flags=re.IGNORECASE)
+        )
+
+        frequency = frequency_det if has_explicit_frequency else max(frequency_det, frequency_model)
+        minutes = minutes_det if has_explicit_duration else max(minutes_det, minutes_model)
+        people = people_det if has_explicit_people else max(people_det, people_model)
+        computed_impact = round((max(0.1, frequency) * max(1.0, minutes) / 60.0) * max(1, people), 2)
+
+        model_impact = float(analysis.get("estimated_impact_hours_per_week") or 0.0)
+        stabilized_impact = max(model_impact, computed_impact)
+
+        analysis["frequency_per_week"] = max(0.1, frequency)
+        analysis["minutes_per_occurrence"] = max(1.0, minutes)
+        analysis["people_affected"] = max(1, people)
+        analysis["estimated_impact_hours_per_week"] = stabilized_impact
+
+        if candidate:
+            analysis.setdefault("title", candidate.title)
+            analysis.setdefault("description", candidate.description)
+            analysis.setdefault("category", candidate.category.value)
+            analysis.setdefault("systems_involved", candidate.systems_involved)
+
+        if stabilized_impact >= 2.0 and analysis.get("needs_more_info") is True:
+            analysis["needs_more_info"] = False
+        if stabilized_impact >= 2.0 and analysis.get("valid_concern") is False:
+            analysis["valid_concern"] = True
+
+        return analysis
 
     def _to_canonical_intake(self, request: COOChatRequest, analysis: dict[str, Any]) -> CanonicalIntake:
         context = request.context
